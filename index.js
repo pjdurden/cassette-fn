@@ -42,7 +42,7 @@ function computeKey(normalizedArgs) {
  * @typedef {Object} TapeOptions
  * @property {string} [dir] - Cassette directory. Default '.tapes'.
  * @property {string} [name] - Cassette file basename. Default 'default'.
- * @property {TapeMode} [mode] - Default 'auto'. Overridden by process.env.LLM_TAPE_MODE if set.
+ * @property {TapeMode} [mode] - Default 'auto'. Overridden by process.env.AGENT_CASSETTE_MODE if set.
  * @property {(args: any[]) => any} [normalize] - Applied to call args before hashing. Default identity.
  *
  * @typedef {Object} TapeStats
@@ -65,7 +65,7 @@ function computeKey(normalizedArgs) {
  *   - 'auto' resolves to 'replay' if the cassette file already exists on disk,
  *     otherwise it resolves to 'record'. This decision is NOT re-checked per call.
  *   - Any other mode ('record' | 'replay' | 'off') is used as given.
- *   - process.env.LLM_TAPE_MODE, if set, overrides options.mode entirely.
+ *   - process.env.AGENT_CASSETTE_MODE, if set, overrides options.mode entirely.
  *
  * If the resolved mode is 'replay', the cassette file is loaded synchronously right
  * here (readFileSync). A missing or unparseable cassette throws immediately, naming
@@ -80,10 +80,10 @@ export function tape(options = {}) {
   const normalize = options.normalize ?? identity;
   const cassettePath = join(dir, `${name}.json`);
 
-  const requestedMode = process.env.LLM_TAPE_MODE || options.mode || 'auto';
+  const requestedMode = process.env.AGENT_CASSETTE_MODE || options.mode || 'auto';
   if (!VALID_MODES.has(requestedMode)) {
     throw new Error(
-      `llm-tape: invalid mode "${requestedMode}". Expected one of: ${[...VALID_MODES].join(', ')}`
+      `agent-cassette: invalid mode "${requestedMode}". Expected one of: ${[...VALID_MODES].join(', ')}`
     );
   }
 
@@ -98,16 +98,16 @@ export function tape(options = {}) {
     try {
       raw = readFileSync(cassettePath, 'utf8');
     } catch (err) {
-      throw new Error(`llm-tape: cassette file not found at "${cassettePath}" (${err.message})`);
+      throw new Error(`agent-cassette: cassette file not found at "${cassettePath}" (${err.message})`);
     }
     let parsed;
     try {
       parsed = JSON.parse(raw);
     } catch (err) {
-      throw new Error(`llm-tape: cassette at "${cassettePath}" is not valid JSON (${err.message})`);
+      throw new Error(`agent-cassette: cassette at "${cassettePath}" is not valid JSON (${err.message})`);
     }
     if (!parsed || typeof parsed !== 'object' || typeof parsed.entries !== 'object' || parsed.entries === null) {
-      throw new Error(`llm-tape: cassette at "${cassettePath}" is malformed: missing "entries" object`);
+      throw new Error(`agent-cassette: cassette at "${cassettePath}" is malformed: missing "entries" object`);
     }
     entries = parsed.entries;
   }
@@ -139,7 +139,7 @@ export function tape(options = {}) {
         if (!list || list.length === 0) {
           misses += 1;
           throw new Error(
-            `llm-tape: no recording found for key "${key}" in cassette "${cassettePath}"`
+            `agent-cassette: no recording found for key "${key}" in cassette "${cassettePath}"`
           );
         }
         const consumed = replayCursor.get(key) ?? 0;

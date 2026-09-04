@@ -11,7 +11,7 @@ import { tape } from '../index.js';
  * @param {(dir: string) => Promise<void>} fn
  */
 async function withTmpDir(fn) {
-  const dir = mkdtempSync(join(tmpdir(), 'llm-tape-test-'));
+  const dir = mkdtempSync(join(tmpdir(), 'agent-cassette-test-'));
   try {
     await fn(dir);
   } finally {
