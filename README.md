@@ -159,6 +159,16 @@ Limits, honestly:
   that returns a stream or async iterator will record the stream object itself, not
   its eventual contents, and will not behave correctly on replay.
 
+## Related
+
+Small, single-purpose packages for the same problem space. Each one has zero
+dependencies and does one thing.
+
+- [`prompt-cache-fit`](https://github.com/pjdurden/prompt-cache-fit) - Reorder prompt blocks least-variable-first for prefix cache reuse, and measure the hit rate.
+- [`cmd-risk`](https://github.com/pjdurden/cmd-risk) - Classify how destructive a shell command is, so an agent knows when to ask a human.
+- [`apply-edit-block`](https://github.com/pjdurden/apply-edit-block) - Apply LLM search/replace edit blocks that do not match the source exactly.
+- [`ctx-compact`](https://github.com/pjdurden/ctx-compact) - Trim a conversation to a token budget without ever orphaning a tool result.
+
 ## License
 
 MIT
