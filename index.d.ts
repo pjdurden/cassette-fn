@@ -11,7 +11,7 @@ export interface TapeOptions {
   name?: string;
   /**
    * 'auto' | 'record' | 'replay' | 'off'. Default 'auto'.
-   * Overridden by process.env.AGENT_CASSETTE_MODE when set.
+   * Overridden by process.env.CASSETTE_FN_MODE when set.
    */
   mode?: TapeMode;
   /**

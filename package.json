@@ -1,5 +1,5 @@
 {
-  "name": "agent-cassette",
+  "name": "cassette-fn",
   "version": "0.1.0",
   "description": "Function-boundary VCR for testing code that calls an LLM: record real calls once, replay them deterministically, while your own tool execution and control flow keep running for real.",
   "type": "module",
@@ -22,7 +22,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/pjdurden/agent-cassette.git"
+    "url": "git+https://github.com/pjdurden/cassette-fn.git"
   },
   "keywords": [
     "llm",

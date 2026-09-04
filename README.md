@@ -1,4 +1,4 @@
-# agent-cassette
+# cassette-fn
 
 Record real LLM calls once, replay them deterministically in tests, while everything
 around the call, including your tool execution and control flow, keeps running for real.
@@ -11,20 +11,20 @@ that quietly drifts from the real provider response shape, or reach for an HTTP-
 VCR library. The HTTP option looks appealing but it freezes the whole agent loop: it
 intercepts the request before your code ever sees it, so on replay your tool-calling
 logic, retries, and control flow never actually execute, and the test ends up
-verifying the recording instead of your code. `agent-cassette` records at the function
+verifying the recording instead of your code. `cassette-fn` records at the function
 boundary you choose instead, so only the one call that actually talks to a provider
 is faked.
 
 ## Install
 
 ```
-npm i agent-cassette
+npm i cassette-fn
 ```
 
 ## Usage
 
 ```js
-import { tape } from 'agent-cassette';
+import { tape } from 'cassette-fn';
 
 // The one function that actually talks to a provider.
 async function callModel(prompt) {
@@ -65,7 +65,7 @@ real API key available) whenever you need to re-record.
   - `'replay'`: never call through. A lookup miss throws an `Error` naming the missing
     key and the cassette path.
   - `'off'`: pass every call straight through, record nothing, `save()` is a no-op.
-  - If `process.env.AGENT_CASSETTE_MODE` is set, it overrides `options.mode` entirely.
+  - If `process.env.CASSETTE_FN_MODE` is set, it overrides `options.mode` entirely.
 - `options.normalize` (`(args: any[]) => any`) - applied to a call's argument array
   before it is hashed into a lookup key, so callers can strip volatile fields
   (timestamps, request ids, an `apiKey`) that would otherwise make every call miss.
@@ -134,7 +134,7 @@ An entry for a call that threw looks like `{ "args": [...], "error": { "message"
 
 ## How it works
 
-`agent-cassette` wraps one function you choose, the one that actually makes a network call
+`cassette-fn` wraps one function you choose, the one that actually makes a network call
 to a provider. It hashes the (optionally normalized) argument list into a short key,
 and stores or replays call outcomes under that key in a plain JSON file. Everything
 that calls the wrapped function, your agent loop, tool execution, retries, is real
