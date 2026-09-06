@@ -1,6 +1,6 @@
 {
   "name": "cassette-fn",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Function-boundary VCR for testing code that calls an LLM: record real calls once, replay them deterministically, while your own tool execution and control flow keep running for real.",
   "type": "module",
   "main": "index.js",

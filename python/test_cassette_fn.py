@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import tempfile
+import threading
 import unittest
 
 from cassette_fn import CassetteError, tape
@@ -466,6 +467,101 @@ class CassetteFnTestCase(unittest.TestCase):
         # `wrapped(text)` with `tape` from ../index.js produced this exact
         # key.
         self.assertEqual(only_key, "d818548c9ae2df14")
+
+    # 22. a normalize that strips a secret keyword argument keeps that secret
+    # out of the saved cassette file entirely (the reported vulnerability:
+    # previously the RAW args/kwargs were stored regardless of normalize,
+    # so following the README's own documented advice to strip an api_key
+    # via normalize did not actually keep it out of the committed file).
+    def test_normalize_strips_secret_from_saved_file(self) -> None:
+        def normalize(args, kwargs):
+            return args, {k: v for k, v in kwargs.items() if k != "api_key"}
+
+        t = tape(dir=self.tmp_dir, name="secretleak1", mode="record", normalize=normalize)
+        wrapped = t.wrap(lambda **kw: {"ok": True})
+        wrapped(prompt="hi", api_key="sk-ant-SUPERSECRET-do-not-commit")
+        t.save()
+
+        file_path = os.path.join(self.tmp_dir, "secretleak1.json")
+        with open(file_path, "r", encoding="utf-8") as f:
+            raw_text = f.read()
+        self.assertNotIn("SUPERSECRET", raw_text)
+
+        parsed = json.loads(raw_text)
+        only_key = next(iter(parsed["entries"]))
+        stored = parsed["entries"][only_key][0]
+        self.assertEqual(stored.get("kwargs"), {"prompt": "hi"})
+        self.assertNotIn("api_key", stored.get("kwargs", {}))
+
+    # 23. a normalize that removes a non-serializable positional argument
+    # (one carrying a threading.RLock, which copy.deepcopy cannot pickle)
+    # now records successfully instead of raising, because the fix only
+    # ever deep-copies the NORMALIZED value, never the raw one.
+    def test_normalize_strips_nonserializable_argument(self) -> None:
+        class ClientLike:
+            def __init__(self) -> None:
+                self.lock = threading.RLock()
+                self.label = "real-client"
+
+        def normalize(args, kwargs):
+            new_args = ["<client>" if isinstance(a, ClientLike) else a for a in args]
+            return new_args, kwargs
+
+        client = ClientLike()
+        t = tape(dir=self.tmp_dir, name="nonserializable1", mode="record", normalize=normalize)
+        wrapped = t.wrap(lambda c, prompt: {"echo": prompt, "client_label": c.label})
+
+        # Must not raise TypeError: cannot pickle '_thread.RLock' object.
+        result = wrapped(client, "hi")
+        self.assertEqual(result, {"echo": "hi", "client_label": "real-client"})
+        t.save()
+
+        file_path = os.path.join(self.tmp_dir, "nonserializable1.json")
+        with open(file_path, "r", encoding="utf-8") as f:
+            parsed = json.load(f)
+        only_key = next(iter(parsed["entries"]))
+        self.assertEqual(parsed["entries"][only_key][0]["args"], ["<client>", "hi"])
+
+    # 24. a normalize that rewrites a value (rather than only stripping one)
+    # stores the rewritten value, not the original.
+    def test_normalize_rewrite_stores_rewritten_value(self) -> None:
+        def normalize(args, kwargs):
+            new_kwargs = dict(kwargs)
+            if "request_id" in new_kwargs:
+                new_kwargs["request_id"] = "<redacted>"
+            return args, new_kwargs
+
+        t = tape(dir=self.tmp_dir, name="rewrite1", mode="record", normalize=normalize)
+        wrapped = t.wrap(lambda **kw: {"ok": True})
+        wrapped(prompt="hi", request_id="req-12345-actual-value")
+        t.save()
+
+        file_path = os.path.join(self.tmp_dir, "rewrite1.json")
+        with open(file_path, "r", encoding="utf-8") as f:
+            raw_text = f.read()
+        self.assertNotIn("req-12345-actual-value", raw_text)
+
+        parsed = json.loads(raw_text)
+        only_key = next(iter(parsed["entries"]))
+        stored_kwargs = parsed["entries"][only_key][0]["kwargs"]
+        self.assertEqual(stored_kwargs, {"prompt": "hi", "request_id": "<redacted>"})
+
+    # 25. with no normalize supplied, stored args/kwargs are exactly the raw
+    # call arguments, unchanged (the identity default must not alter what
+    # gets written, only a real normalize function should).
+    def test_no_normalize_stores_raw_args_and_kwargs_unchanged(self) -> None:
+        t = tape(dir=self.tmp_dir, name="noNormalize1", mode="record")
+        wrapped = t.wrap(lambda a, b, **kw: {"sum": a + b})
+        wrapped(1, 2, extra="unchanged-value")
+        t.save()
+
+        file_path = os.path.join(self.tmp_dir, "noNormalize1.json")
+        with open(file_path, "r", encoding="utf-8") as f:
+            parsed = json.load(f)
+        only_key = next(iter(parsed["entries"]))
+        entry = parsed["entries"][only_key][0]
+        self.assertEqual(entry["args"], [1, 2])
+        self.assertEqual(entry["kwargs"], {"extra": "unchanged-value"})
 
 
 if __name__ == "__main__":

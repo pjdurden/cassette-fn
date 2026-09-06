@@ -49,6 +49,11 @@ console.log(t.stats()); // { hits: 0, misses: 1, recorded: 1, mode: 'record' }
 Commit the `.tapes/*.json` file next to your tests. Delete it and re-run once (with a
 real API key available) whenever you need to re-record.
 
+**Security note:** review a cassette file before committing it. It contains your
+recorded call arguments verbatim (after `normalize`, see below) and, unless you
+strip secrets with `normalize`, that can include an API key or other credential you
+passed to the wrapped function.
+
 ## API
 
 ### `tape(options?) -> Tape`
@@ -67,9 +72,13 @@ real API key available) whenever you need to re-record.
   - `'off'`: pass every call straight through, record nothing, `save()` is a no-op.
   - If `process.env.CASSETTE_FN_MODE` is set, it overrides `options.mode` entirely.
 - `options.normalize` (`(args: any[]) => any`) - applied to a call's argument array
-  before it is hashed into a lookup key, so callers can strip volatile fields
-  (timestamps, request ids, an `apiKey`) that would otherwise make every call miss.
-  Default: identity.
+  before it is hashed into a lookup key **and** before it is written into the
+  cassette. The normalized value is the version of the call that gets remembered:
+  both the key and the recorded `args` are computed from it, the raw arguments you
+  passed in are never stored. This is what makes it safe to strip a secret (an
+  `apiKey`, a bearer token) or a volatile field (a timestamp, a request id) that
+  would otherwise make every call miss or, worse, land in a cassette you commit to
+  git. Default: identity.
 
 Returns a `Tape`.
 
@@ -77,7 +86,8 @@ Returns a `Tape`.
 
 Wraps any `async` function. Each call:
 
-1. Computes `key = sha256(JSON.stringify(normalize(args))).hex.slice(0, 16)`.
+1. Computes `normalizedArgs = normalize(args)`, then
+   `key = sha256(JSON.stringify(normalizedArgs)).hex.slice(0, 16)`.
 2. In replay mode: looks up `key`, returns a deep clone of the stored result (so a
    caller mutating the returned value can never corrupt the cassette). Repeated
    identical calls replay the recorded entries for that key in the order they were
@@ -85,9 +95,12 @@ Wraps any `async` function. Each call:
    A recorded thrown call is replayed as a freshly constructed `Error` with the same
    `message` and `name`. A missing key throws immediately, naming the key and the
    cassette path.
-3. In record mode: calls `fn(...args)` for real and appends `{ args, result }` (or, on
-   a thrown error, `{ args, error: { message, name } }`) to the ordered list under
-   `key`, then returns (or rethrows) the real outcome.
+3. In record mode: calls `fn(...args)` for real (with your original, un-normalized
+   arguments) and appends `{ args: normalizedArgs, result }` (or, on a thrown error,
+   `{ args: normalizedArgs, error: { message, name } }`) to the ordered list under
+   `key`, then returns (or rethrows) the real outcome. The stored `args` is always
+   the normalized value, never the raw one, so whatever `normalize` strips or
+   rewrites never touches disk.
 4. In `'off'` mode: calls `fn(...args)` directly, no key is computed, nothing is
    recorded.
 

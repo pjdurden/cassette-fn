@@ -51,6 +51,12 @@ print(t.stats())  # Stats(hits=0, misses=1, recorded=1, mode='record')
 Commit the `.tapes/*.json` file next to your tests. Delete it and re-run once (with a
 real API key available) whenever you need to re-record.
 
+Before committing a cassette, read it. `normalize` controls what is written to disk
+(see `normalize` below): if your wrapped call carries an API key, an auth header, or
+any other secret, strip it in `normalize` and confirm it is actually gone from the
+saved file, rather than assuming it is. A cassette is plain, readable JSON for
+exactly this reason.
+
 ## API
 
 ### `tape(*, dir=".tapes", name="default", mode="auto", normalize=None) -> Tape`
@@ -71,11 +77,20 @@ real API key available) whenever you need to re-record.
     entirely. This is the same environment variable name the JavaScript version
     reads, so both implementations honor one setting.
 - `normalize` (`Callable[[list, dict], tuple]`) - applied to a call's positional
-  argument list and keyword argument dict before they are hashed into a lookup key,
-  so callers can strip volatile fields (timestamps, request ids, an API key) that
-  would otherwise make every call miss. It receives `(args, kwargs)` and must return
-  `(normalized_args, normalized_kwargs)`. Default: identity, i.e. `lambda args,
-  kwargs: (args, kwargs)`.
+  argument list and keyword argument dict before they are hashed into a lookup key
+  **and before they are written to the cassette**. It receives `(args, kwargs)` and
+  must return `(normalized_args, normalized_kwargs)`. Default: identity, i.e. `lambda
+  args, kwargs: (args, kwargs)`. This is a load-bearing detail, not a convenience:
+  since the *normalized* value, never the raw one, is what gets hashed and stored,
+  `normalize` is the one place to
+  - strip a volatile field (a timestamp, a request id) that would otherwise make an
+    identical call miss on replay,
+  - strip or mask a secret (an API key, an auth token) before it is ever written to
+    disk, so it does not end up in a cassette file you commit, and
+  - replace a non-serializable argument (an SDK client object, a file handle, a
+    thread lock) with a serializable stand-in, since the wrapped function itself
+    still receives the real, un-normalized arguments and is called normally; only
+    what gets recorded is normalized.
 
 Returns a `Tape`.
 
@@ -104,15 +119,19 @@ since essentially every real LLM SDK call is keyword-based. Each call:
    same message (see "How it works" for why `RuntimeError` and not the original
    exception type). A missing key raises `CassetteError` immediately, naming the key
    and the cassette path.
-3. In record mode: calls `fn(*args, **kwargs)` for real and appends `{"args": ...,
-   "kwargs": ..., "result": ...}` (or, on a raised exception, `{"args": ..., "kwargs":
-   ..., "error": {"message": ..., "name": ...}}`) to the ordered list under `key`,
-   then returns (or re-raises) the real outcome. The `"kwargs"` key is omitted
-   entirely when the call had no keyword arguments, so a purely positional call
-   produces the same entry shape as the JavaScript version's cassettes. The recorded
-   `args`, `kwargs`, and `result` are all deep-copied at record time, so mutating the
-   caller's argument objects (including a `messages=[...]` list) after the call, or
-   the returned result, can never corrupt the cassette.
+3. In record mode: calls `fn(*args, **kwargs)` for real, with the original,
+   un-normalized arguments, then appends `{"args": ..., "kwargs": ..., "result":
+   ...}` (or, on a raised exception, `{"args": ..., "kwargs": ..., "error":
+   {"message": ..., "name": ...}}`) to the ordered list under `key`, then returns (or
+   re-raises) the real outcome. **The `args` and `kwargs` written to the entry are
+   `normalized_args` and `normalized_kwargs`, the same values used to compute `key`,
+   not the raw arguments the caller passed in.** The `"kwargs"` key is omitted
+   entirely when the normalized kwargs are empty, so a purely positional call, or one
+   whose kwargs were fully stripped by `normalize`, produces the same entry shape as
+   the JavaScript version's cassettes. `args`, `kwargs`, and `result` are all
+   deep-copied at record time, so mutating the caller's argument objects (including a
+   `messages=[...]` list) after the call, or the returned result, can never corrupt
+   the cassette.
 4. In `"off"` mode: calls `fn(*args, **kwargs)` directly, no key is computed, nothing
    is recorded.
 
@@ -203,6 +222,19 @@ accented Latin characters, a punctuation dash, CJK text, and an emoji was also
 replayed successfully, in both cases a hit (not a miss), confirming the two
 implementations produce identical keys for identical arguments, ASCII or not. The
 same construction extends naturally to keyword arguments; see `Tape.wrap` above.
+
+`normalize` runs once per call, on the raw `(args, kwargs)`, and its output,
+`(normalized_args, normalized_kwargs)`, is used for both the lookup key and what gets
+written to the cassette entry's `"args"`/`"kwargs"`. The wrapped function itself is
+always called with the original, un-normalized arguments, since it may need the real
+value (a real client, a real API key) to do its job. This means `normalize` is not
+just a hashing convenience: it is the mechanism for keeping a secret out of a
+committed cassette (strip or mask it in `normalize` and it never reaches disk), and
+for wrapping a call that takes a non-serializable argument at all (an SDK client
+object, a file handle, a thread lock all fail `copy.deepcopy`; replace one with a
+serializable placeholder in `normalize` and the raw value is never copied). Because
+this is security-relevant, do not just trust that `normalize` works: read the saved
+cassette file, as suggested under Usage above.
 
 A recorded exception is reconstructed on replay as a Python `RuntimeError` whose
 message matches the original. The original exception's type name is preserved as a

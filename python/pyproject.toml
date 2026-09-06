@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cassette-fn"
-version = "0.1.0"
+version = "0.2.0"
 description = "Record real calls once, replay them deterministically in tests, at the function boundary you choose."
 readme = "README.md"
 requires-python = ">=3.9"

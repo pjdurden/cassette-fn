@@ -43,7 +43,10 @@ function computeKey(normalizedArgs) {
  * @property {string} [dir] - Cassette directory. Default '.tapes'.
  * @property {string} [name] - Cassette file basename. Default 'default'.
  * @property {TapeMode} [mode] - Default 'auto'. Overridden by process.env.CASSETTE_FN_MODE if set.
- * @property {(args: any[]) => any} [normalize] - Applied to call args before hashing. Default identity.
+ * @property {(args: any[]) => any} [normalize] - Applied to call args before hashing AND before
+ *   storing. The normalized value is both what the lookup key is computed from and what gets
+ *   written into the cassette entry's "args" field, so stripping a secret here keeps it out of
+ *   the recorded call entirely, not just out of the key. Default identity.
  *
  * @typedef {Object} TapeStats
  * @property {number} hits - Calls served from the cassette.
@@ -132,7 +135,8 @@ export function tape(options = {}) {
         return fn(...args);
       }
 
-      const key = computeKey(normalize(args));
+      const normalizedArgs = normalize(args);
+      const key = computeKey(normalizedArgs);
 
       if (resolvedMode === 'replay') {
         const list = entries[key];
@@ -160,12 +164,12 @@ export function tape(options = {}) {
       if (!entries[key]) entries[key] = [];
       try {
         const result = await fn(...args);
-        entries[key].push({ args: deepClone(args), result: deepClone(result) });
+        entries[key].push({ args: deepClone(normalizedArgs), result: deepClone(result) });
         recorded += 1;
         misses += 1;
         return result;
       } catch (err) {
-        entries[key].push({ args: deepClone(args), error: { message: err.message, name: err.name } });
+        entries[key].push({ args: deepClone(normalizedArgs), error: { message: err.message, name: err.name } });
         recorded += 1;
         misses += 1;
         throw err;

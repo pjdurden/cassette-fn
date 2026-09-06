@@ -191,6 +191,17 @@ class Tape:
         essentially every real-world LLM SDK call (e.g.
         ``client.messages.create(model=..., max_tokens=..., messages=...)``)
         is keyword-based.
+
+        The wrapped ``fn`` is always called with the real, un-normalized
+        arguments, since it may need a real client object, file handle, or
+        other value ``normalize`` strips out. What gets written to the
+        cassette (both the lookup key and the stored ``args``/``kwargs``) is
+        always the *normalized* value, never the raw one. This is what makes
+        ``normalize`` an effective way to keep a secret (an API key, an auth
+        token) out of a cassette file, and also what makes it possible to
+        wrap a call that takes a non-serializable argument at all: strip or
+        replace that argument in ``normalize`` and the raw, non-serializable
+        value never reaches ``copy.deepcopy``.
         """
 
         def wrapped(*args: Any, **kwargs: Any) -> Any:
@@ -227,18 +238,18 @@ class Tape:
                 self._entries[key] = []
             try:
                 result = fn(*args, **kwargs)
-                new_entry: Dict[str, Any] = {"args": copy.deepcopy(list(args))}
-                if kwargs:
-                    new_entry["kwargs"] = copy.deepcopy(dict(kwargs))
+                new_entry: Dict[str, Any] = {"args": copy.deepcopy(normalized_args)}
+                if normalized_kwargs:
+                    new_entry["kwargs"] = copy.deepcopy(normalized_kwargs)
                 new_entry["result"] = copy.deepcopy(result)
                 self._entries[key].append(new_entry)
                 self._recorded += 1
                 self._misses += 1
                 return result
             except Exception as err:
-                new_entry = {"args": copy.deepcopy(list(args))}
-                if kwargs:
-                    new_entry["kwargs"] = copy.deepcopy(dict(kwargs))
+                new_entry = {"args": copy.deepcopy(normalized_args)}
+                if normalized_kwargs:
+                    new_entry["kwargs"] = copy.deepcopy(normalized_kwargs)
                 new_entry["error"] = {"message": str(err), "name": type(err).__name__}
                 self._entries[key].append(new_entry)
                 self._recorded += 1

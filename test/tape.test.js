@@ -217,6 +217,90 @@ test('normalize strips a volatile field so a different value at that field still
   });
 });
 
+test('normalize that strips a secret field keeps that value out of the saved cassette file', async () => {
+  await withTmpDir(async (dir) => {
+    const normalize = (args) =>
+      args.map((a) => (a && typeof a === 'object' ? { ...a, apiKey: undefined } : a));
+
+    const t = tape({ dir, name: 'leak', mode: 'record', normalize });
+    const f = t.wrap(async () => ({ ok: true }));
+    await f({ prompt: 'hi', apiKey: 'sk-ant-SUPERSECRET-do-not-commit' });
+    await t.save();
+
+    const filePath = join(dir, 'leak.json');
+    const fileText = readFileSync(filePath, 'utf8');
+    assert.ok(
+      !fileText.includes('sk-ant-SUPERSECRET-do-not-commit'),
+      'the secret must not appear anywhere in the saved cassette file'
+    );
+
+    const parsed = JSON.parse(fileText);
+    const [onlyKey] = Object.keys(parsed.entries);
+    // JSON.stringify drops keys whose value is `undefined`, so the stored args
+    // should have no apiKey property at all, not merely an empty one.
+    assert.deepEqual(parsed.entries[onlyKey][0].args, [{ prompt: 'hi' }]);
+    assert.ok(!('apiKey' in parsed.entries[onlyKey][0].args[0]));
+  });
+});
+
+test('normalize that rewrites a value stores the rewritten value, not the original', async () => {
+  await withTmpDir(async (dir) => {
+    const normalize = (args) => args.map((a) => (typeof a === 'string' ? a.toUpperCase() : a));
+
+    const t = tape({ dir, name: 'rewrite1', mode: 'record', normalize });
+    await t.wrap(async (x) => ({ echo: x }))('hello');
+    await t.save();
+
+    const parsed = JSON.parse(readFileSync(join(dir, 'rewrite1.json'), 'utf8'));
+    const [onlyKey] = Object.keys(parsed.entries);
+    assert.deepEqual(parsed.entries[onlyKey][0].args, ['HELLO']);
+  });
+});
+
+test('with no normalize supplied, stored args are unchanged (not a regression)', async () => {
+  await withTmpDir(async (dir) => {
+    const t = tape({ dir, name: 'nonorm1', mode: 'record' });
+    await t.wrap(async (payload) => ({ echo: payload.q }))({ q: 'hi', ts: 111 });
+    await t.save();
+
+    const parsed = JSON.parse(readFileSync(join(dir, 'nonorm1.json'), 'utf8'));
+    const [onlyKey] = Object.keys(parsed.entries);
+    assert.deepEqual(parsed.entries[onlyKey][0].args, [{ q: 'hi', ts: 111 }]);
+  });
+});
+
+test('the positional-only ASCII reference key is unchanged (JS/Python cross-implementation parity)', async () => {
+  await withTmpDir(async (dir) => {
+    const t = tape({ dir, name: 'jsparity1', mode: 'record' });
+    await t.wrap(async (x, payload) => ({ y: x * 2, echoed: payload.q }))(5, {
+      q: 'hello world',
+      ts: 111,
+    });
+    await t.save();
+
+    const parsed = JSON.parse(readFileSync(join(dir, 'jsparity1.json'), 'utf8'));
+    const [onlyKey] = Object.keys(parsed.entries);
+    // This exact hex value is the reference key checked against by the Python
+    // port's test_positional_only_key_matches_js_reference. It must never change.
+    assert.equal(onlyKey, '742d2e2e6d3841b1');
+  });
+});
+
+test('the unicode reference key is unchanged (JS/Python cross-implementation parity)', async () => {
+  await withTmpDir(async (dir) => {
+    const text = 'héllo wörld — café 日本語 emoji \u{1f389} test';
+    const t = tape({ dir, name: 'unicode1', mode: 'record' });
+    await t.wrap(async (x) => ({ echo: x }))(text);
+    await t.save();
+
+    const parsed = JSON.parse(readFileSync(join(dir, 'unicode1.json'), 'utf8'));
+    const [onlyKey] = Object.keys(parsed.entries);
+    // This exact hex value is the reference key checked against by the Python
+    // port's test_unicode_argument_key_matches_js_reference. It must never change.
+    assert.equal(onlyKey, 'd818548c9ae2df14');
+  });
+});
+
 test('replay mode save() is a no-op and never overwrites the cassette', async () => {
   await withTmpDir(async (dir) => {
     const rec = tape({ dir, name: 'replaysave1', mode: 'record' });
