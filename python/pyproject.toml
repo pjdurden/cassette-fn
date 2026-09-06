@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cassette-fn"
+version = "0.1.0"
+description = "Record real calls once, replay them deterministically in tests, at the function boundary you choose."
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [{name = "Prajjwal Chittori"}]
+keywords = ["testing", "vcr", "mock", "record-replay", "llm", "fixtures"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://github.com/pjdurden/cassette-fn"
+Source = "https://github.com/pjdurden/cassette-fn"
+
+[tool.hatch.build.targets.wheel]
+include = ["cassette_fn.py", "py.typed"]
